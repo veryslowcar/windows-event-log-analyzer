@@ -20,7 +20,10 @@
 ## Getting Started
 
 ### Installation:
-1. Clone the repository: 'git clone https://github.com/veryslowcar/windows-event-log-analyzer'
+1. Clone the repository: 
+   '''bash 
+    git clone https://github.com/veryslowcar/windows-event-log-analyzer 
+   '''
 
 2. Enter project directory: 'cd windows-event-log-analyzer'
 
