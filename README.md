@@ -1,5 +1,12 @@
 # windows-event-log-analyzer
 
+## Features
+- Upload Windows Event Viewer files
+- Analyze errors, warnings, and important events
+- Search and filter event logs
+- View Event ID's, timestamps, and event messages
+- User-friendly dashboard displaying event statistics
+
 ## Technology Stack
 - **Frontend:** React
 - **Backend:** Python, Flask
@@ -9,3 +16,14 @@
 - **Containerization:** Docker
 - **CI/CD:** GitHub Actions
 - **Deployment:** Google Cloud
+
+## Getting Started
+
+### Installation:
+1. Clone the repository: 'git clone https://github.com/veryslowcar/windows-event-log-analyzer'
+
+2. Enter project directory: 'cd windows-event-log-analyzer'
+
+3. Start application: 'docker compose up --build'
+
+
