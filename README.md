@@ -1,13 +1,13 @@
 # windows-event-log-analyzer
 
-## Features
+## Features:
 - Upload Windows Event Viewer files
 - Analyze errors, warnings, and important events
 - Search and filter event logs
 - View Event ID's, timestamps, and event messages
 - User-friendly dashboard displaying event statistics
 
-## Technology Stack
+## Technology Stack:
 - **Frontend:** React
 - **Backend:** Python, Flask
 - **Database:** SQLite
@@ -17,7 +17,7 @@
 - **CI/CD:** GitHub Actions
 - **Deployment:** Google Cloud
 
-## Getting Started
+## Getting Started:
 
 ### Installation:
 1. Clone the repository:
