@@ -22,11 +22,17 @@
 ### Installation:
 1. Clone the repository:
    ```bash
-   'git clone https://github.com/veryslowcar/windows-event-log-analyzer'
+   git clone https://github.com/veryslowcar/windows-event-log-analyzer
    ```
 
-3. Enter project directory: 'cd windows-event-log-analyzer'
+3. Enter project directory: 
+   ```bash
+   cd windows-event-log-analyzer
+   ```
 
-4. Start application: 'docker compose up --build'
+4. Start the application: 
+   ```bash
+   docker compose up --build'
+   ```
 
 
