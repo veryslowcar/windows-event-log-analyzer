@@ -22,7 +22,7 @@
 ### Installation:
 1. Clone the repository:
    ```bash
-   git clone https://github.com/veryslowcar/windows-event-log-analyzer
+   git clone https://github.com/veryslowcar/windows-event-log-analyzer.git
    ```
 
 3. Enter project directory: 
