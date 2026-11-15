@@ -11,8 +11,7 @@
 - **Frontend:** React
 - **Backend:** Python, Flask
 - **Database:** SQLite
-- **AI Integration:** GitHub Copilot
-- **Version Control:** Git, GitHub
+- **AI Assistant:** GitHub Copilot
 - **Containerization:** Docker
 - **CI/CD:** GitHub Actions
 - **Deployment:** Google Cloud
