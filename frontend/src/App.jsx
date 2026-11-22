@@ -8,6 +8,7 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [uploadedLogs, setUploadedLogs] = useState([]);
   const [currentPage, setCurrentPage] = useState("upload");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processing, setProcessing] = useState(false);
@@ -59,8 +60,16 @@ function App() {
   function chooseFile(event) {
     setFile(event.target.files?.[0] ?? null);
     setMessage(null);
-    setSummary(null);
     setEventPage(0);
+  }
+
+  function selectUploadedLog(event) {
+    const selectedLog = uploadedLogs.find((log) => log.upload_id === event.target.value);
+    if (selectedLog) {
+      setSummary(selectedLog);
+      setEventPage(0);
+      setMessage(null);
+    }
   }
 
   async function uploadFile(event) {
@@ -116,13 +125,16 @@ function App() {
         request.send(formData);
       });
 
+      setUploadedLogs((logs) => [...logs, result]);
       setSummary(result);
       setEventPage(0);
       setMessage({
         type: "success",
         text: `${result.filename} processed. ${result.event_count} event${result.event_count === 1 ? "" : "s"} found.`,
       });
-      window.history.pushState(null, "", "/dashboard");
+      if (window.location.pathname !== "/dashboard") {
+        window.history.pushState(null, "", "/dashboard");
+      }
       setCurrentPage("dashboard");
       setFile(null);
       if (fileInput.current) {
@@ -236,7 +248,67 @@ function App() {
                 <h1>Event log dashboard</h1>
                 <p>Review the summarized events from your uploaded Windows Event Log.</p>
               </div>
-              <a className="new-upload-link" href="/">Upload another log</a>
+            </div>
+
+            <div className="dashboard-log-actions">
+              <div className="log-switcher">
+                <label htmlFor="uploaded-log-select">Uploaded logs ({uploadedLogs.length})</label>
+                <select
+                  id="uploaded-log-select"
+                  value={summary.upload_id}
+                  onChange={selectUploadedLog}
+                  aria-label="Select an uploaded log"
+                >
+                  {uploadedLogs.map((log, index) => (
+                    <option key={log.upload_id} value={log.upload_id}>
+                      {index + 1}. {log.filename} — {log.event_count} events
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <form className="dashboard-upload" onSubmit={uploadFile} noValidate>
+                <label className="dashboard-file-picker" htmlFor="event-log">
+                  <span className="file-name">{file ? file.name : "Choose another .evtx file"}</span>
+                  <span className="dashboard-browse-button">Browse</span>
+                  <input
+                    ref={fileInput}
+                    id="event-log"
+                    type="file"
+                    accept=".evtx"
+                    onChange={chooseFile}
+                    disabled={uploading}
+                    aria-label="Choose another EVTX file"
+                  />
+                </label>
+                <button className="dashboard-upload-button" type="submit" disabled={uploading || !file}>
+                  {uploading ? (
+                    <>
+                      <span className="spinner" aria-hidden="true" />
+                      {processing ? "Processing log…" : `Uploading ${uploadProgress}%…`}
+                    </>
+                  ) : (
+                    "Upload another log"
+                  )}
+                </button>
+                {uploading && (
+                  <div className="upload-progress" role="status" aria-live="polite">
+                    <div className={`upload-progress-track ${processing ? "processing" : ""}`} aria-hidden="true">
+                      <div
+                        className="upload-progress-bar"
+                        style={processing ? undefined : { width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                    <span>
+                      {processing ? "Upload complete. Processing event records…" : `Uploading file… ${uploadProgress}%`}
+                    </span>
+                  </div>
+                )}
+                {message && (
+                  <div className={`feedback ${message.type}`} role={message.type === "error" ? "alert" : "status"}>
+                    {message.text}
+                  </div>
+                )}
+              </form>
             </div>
 
             <section className="summary-card" aria-labelledby="summary-heading">
