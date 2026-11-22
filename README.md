@@ -13,9 +13,10 @@ A web application for uploading and analyzing Windows Event Log (`.evtx`) files.
 
 ## Current status
 
-The application supports EVTX uploads through the React interface and Flask
-API. Uploaded files are stored in a Docker volume. EVTX parsing, database
-storage, and event analysis will be added incrementally.
+The application uploads and parses EVTX files, then displays structured event
+summaries in the React dashboard. Uploaded files are stored in a Docker volume.
+Database storage, filtering, and deeper event analysis will be added
+incrementally.
 
 ## Run the application
 
@@ -44,7 +45,9 @@ npm run dev
 ```
 
 The upload API accepts multipart form data with a `file` field and an `.evtx`
-filename. Uploads are limited to 100 MB.
+filename. Uploads are limited to 100 MB. Successful responses include an
+`events` array with event ID, timestamp, source, severity, and message fields
+when available. Files that cannot be parsed return a processing error.
 
 ## Troubleshooting uploads
 
