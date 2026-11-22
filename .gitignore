@@ -15,8 +15,12 @@ dist/
 *.sqlite3
 *.db
 *.evtx
+backend/uploads/
 
 # Editor and OS files
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Documentation stays local and is not committed.
+/docs/
