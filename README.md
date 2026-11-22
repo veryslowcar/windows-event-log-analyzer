@@ -1,37 +1,40 @@
-# windows-event-log-analyzer
+# Windows Event Log Analyzer
 
-## Features:
-- Upload Windows Event Viewer files
-- Analyze errors, warnings, and important events
-- Search and filter event logs
-- View Event ID's, timestamps, and event messages
-- User-friendly dashboard displaying event statistics
+A web application for uploading and analyzing Windows Event Log (`.evtx`) files.
 
-## Technology Stack:
+## Planned technology
+
 - **Frontend:** React
-- **Backend:** Python, Flask
+- **Backend:** Python and Flask
 - **Database:** SQLite
-- **AI Assistant:** GitHub Copilot
-- **Containerization:** Docker
+- **Containers:** Docker and Docker Compose
 - **CI/CD:** GitHub Actions
-- **Deployment:** Google Cloud
+- **Deployment:** Google Cloud Run
 
-## Getting Started:
+## Current status
 
-### Installation:
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/veryslowcar/windows-event-log-analyzer.git
-   ```
+The initial backend scaffold exposes a health endpoint. React, EVTX parsing,
+database storage, and event analysis will be added incrementally.
 
-3. Enter project directory: 
-   ```bash
-   cd windows-event-log-analyzer
-   ```
+## Run the backend
 
-4. Start the application: 
-   ```bash
-   docker compose up --build'
-   ```
+With Docker Compose:
 
+```bash
+docker compose up --build
+```
 
+The health endpoint is available at <http://localhost:5000/api/health>.
+
+To run locally, install the development dependencies and start Flask:
+
+```bash
+python -m pip install -r backend/requirements-dev.txt
+python -m flask --app backend.app run
+```
+
+## Run tests
+
+```bash
+python -m pytest backend/tests
+```
