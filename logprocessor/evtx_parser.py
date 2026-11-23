@@ -1,6 +1,9 @@
+import multiprocessing
+import os
 import re
 import struct
 import xml.etree.ElementTree as ET
+from concurrent.futures import ProcessPoolExecutor
 from typing import TypedDict
 
 from Evtx.BinaryParser import ParseException
@@ -8,6 +11,8 @@ from Evtx.Evtx import Evtx
 
 
 EVTX_MAGIC = b"ElfFile\x00"
+PARALLEL_PARSE_MIN_SIZE = 2 * 1024 * 1024
+MAX_PARSE_WORKERS = 4
 STRING_BOUNDARY_RE = re.compile(r"</\s*string\s*>\s*<\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
 STRING_TAG_RE = re.compile(r"</?\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
 SECURITY_AUDIT_SUCCESS = 0x0020000000000000
@@ -38,6 +43,54 @@ class EventSummary(TypedDict):
 
 class EvtxProcessingError(ValueError):
     pass
+
+
+def _parse_evtx_chunk_group(
+    args: tuple[str, int, int],
+) -> list[tuple[int, list[EventSummary]]]:
+    file_path, worker_index, worker_count = args
+    parsed_chunks = []
+
+    with Evtx(file_path) as log:
+        for chunk_index, chunk in enumerate(log.chunks()):
+            if chunk_index % worker_count != worker_index:
+                continue
+            parsed_chunks.append(
+                (
+                    chunk_index,
+                    [summarize_event_xml(record.xml()) for record in chunk.records()],
+                )
+            )
+
+    return parsed_chunks
+
+
+def _parse_evtx_in_parallel(file_path: str) -> list[EventSummary]:
+    # Limit parallel workers to avoid excessive memory use on large uploads.
+    worker_count = min(MAX_PARSE_WORKERS, os.cpu_count() or 1)
+    if worker_count < 2:
+        with Evtx(file_path) as log:
+            return [summarize_event_xml(record.xml()) for record in log.records()]
+
+    tasks = [
+        (file_path, worker_index, worker_count)
+        for worker_index in range(worker_count)
+    ]
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        mp_context=multiprocessing.get_context("spawn"),
+    ) as executor:
+        parsed_chunks = [
+            chunk
+            for worker_chunks in executor.map(_parse_evtx_chunk_group, tasks)
+            for chunk in worker_chunks
+        ]
+
+    return [
+        event
+        for _, chunk_events in sorted(parsed_chunks, key=lambda chunk: chunk[0])
+        for event in chunk_events
+    ]
 
 
 def _find_child(element: ET.Element | None, name: str) -> ET.Element | None:
@@ -239,6 +292,9 @@ def parse_evtx(file_path: str) -> list[EventSummary]:
                 or header.header_chunk_size() != 0x1000
             ):
                 raise EvtxProcessingError("The EVTX file header is invalid or unsupported.")
+
+            if os.path.getsize(file_path) >= PARALLEL_PARSE_MIN_SIZE:
+                return _parse_evtx_in_parallel(file_path)
 
             return [summarize_event_xml(record.xml()) for record in log.records()]
     except EvtxProcessingError:

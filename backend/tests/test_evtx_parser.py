@@ -1,6 +1,7 @@
 import pytest
 
 from logprocessor.evtx_parser import EvtxProcessingError
+from logprocessor.evtx_parser import _parse_evtx_in_parallel
 from logprocessor.evtx_parser import parse_evtx
 from logprocessor.evtx_parser import summarize_event_xml
 
@@ -216,6 +217,58 @@ def test_parse_evtx_rejects_non_evtx_content(tmp_path):
 
     with pytest.raises(EvtxProcessingError, match="not a valid EVTX log"):
         parse_evtx(str(invalid_file))
+
+
+def test_parallel_evtx_parser_preserves_chunk_order(monkeypatch):
+    event_xml = [
+        f'<Event xmlns="{EVENT_NAMESPACE}"><System><EventID>{event_id}</EventID></System></Event>'
+        for event_id in (101, 102, 103)
+    ]
+
+    class FakeRecord:
+        def __init__(self, xml):
+            self._xml = xml
+
+        def xml(self):
+            return self._xml
+
+    class FakeChunk:
+        def __init__(self, xml):
+            self._xml = xml
+
+        def records(self):
+            return iter([FakeRecord(self._xml)])
+
+    class FakeLog:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc_value, _traceback):
+            return False
+
+        def chunks(self):
+            return iter(FakeChunk(xml) for xml in event_xml)
+
+    class InlineExecutor:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc_value, _traceback):
+            return False
+
+        def map(self, function, tasks):
+            return map(function, tasks)
+
+    monkeypatch.setattr("logprocessor.evtx_parser.Evtx", lambda _path: FakeLog())
+    monkeypatch.setattr("logprocessor.evtx_parser.os.cpu_count", lambda: 2)
+    monkeypatch.setattr("logprocessor.evtx_parser.ProcessPoolExecutor", InlineExecutor)
+
+    result = _parse_evtx_in_parallel("ignored.evtx")
+
+    assert [event["event_id"] for event in result] == [101, 102, 103]
 
 
 def test_parse_evtx_accepts_newer_minor_version_without_strict_verification(tmp_path, monkeypatch):
