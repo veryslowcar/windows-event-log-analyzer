@@ -25,6 +25,9 @@ def test_upload_processes_evtx_file_and_returns_events(test_app, tmp_path, monke
             "timestamp": "2026-11-22T12:00:00.000Z",
             "source": "Microsoft-Windows-Security-Auditing",
             "severity": "Information",
+            "channel": "Security",
+            "keywords": "Audit Success",
+            "task_category": "Logon",
             "message": "A user logged on.",
         }
     ]

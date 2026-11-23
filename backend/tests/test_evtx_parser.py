@@ -28,11 +28,14 @@ def test_summarize_event_xml_extracts_event_fields_and_rendered_message():
         "timestamp": "2026-11-22T12:00:00.000Z",
         "source": "Microsoft-Windows-Security-Auditing",
         "severity": "Information",
+        "channel": None,
+        "keywords": None,
+        "task_category": None,
         "message": "A user logged on.",
     }
 
 
-def test_summarize_event_xml_builds_message_from_event_data_when_unrendered():
+def test_summarize_event_xml_uses_general_metadata_when_message_is_unrendered():
     event_xml = f"""\
     <Event xmlns="{EVENT_NAMESPACE}">
       <System>
@@ -49,9 +52,162 @@ def test_summarize_event_xml_builds_message_from_event_data_when_unrendered():
     result = summarize_event_xml(event_xml)
 
     assert result["severity"] == "Error"
-    assert result["message"] == "TargetUserName: alice; LogonType: 3"
+    assert result["channel"] is None
+    assert result["keywords"] is None
+    assert result["task_category"] is None
+    assert result["message"] == (
+        "Rendered message unavailable. General event information:\n"
+        "Event ID: 4625\n"
+        "Level: Error"
+    )
+    assert "alice" not in result["message"]
     assert result["timestamp"] is None
     assert result["source"] is None
+
+
+def test_summarize_event_xml_uses_rendered_level_when_present():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Channel>Application</Channel>
+        <Level>0</Level>
+      </System>
+      <RenderingInfo>
+        <Level>Information</Level>
+      </RenderingInfo>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["severity"] == "Information"
+
+
+@pytest.mark.parametrize(
+    ("channel", "expected_severity"),
+    [
+        ("Application", "Information"),
+        ("Setup", "Information"),
+        ("System", "Information"),
+        ("ForwardedEvents", "LogAlways"),
+    ],
+)
+def test_summarize_level_zero_uses_channel_appropriate_label(channel, expected_severity):
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Channel>{channel}</Channel>
+        <Level>0</Level>
+      </System>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["severity"] == expected_severity
+
+
+def test_summarize_event_xml_extracts_log_specific_metadata():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Channel>Security</Channel>
+        <Keywords>0x8020000000000000</Keywords>
+        <Task>12544</Task>
+      </System>
+      <RenderingInfo>
+        <Keywords>
+          <Keyword>Audit Success</Keyword>
+          <Keyword>Classic</Keyword>
+        </Keywords>
+        <Task>Logon</Task>
+      </RenderingInfo>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["channel"] == "Security"
+    assert result["keywords"] == "Audit Success"
+    assert result["task_category"] == "Logon"
+
+
+def test_summarize_event_xml_falls_back_to_system_keywords_and_task():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Keywords>0x8020000000000000</Keywords>
+        <Task>12544</Task>
+      </System>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["keywords"] == "0x8020000000000000"
+    assert result["task_category"] is None
+
+
+@pytest.mark.parametrize(
+    ("keyword_mask", "expected_keywords"),
+    [
+        ("0x8020000000000000", "Audit Success"),
+        ("0x8010000000000000", "Audit Failure"),
+    ],
+)
+def test_summarize_security_event_resolves_keyword_and_task_display_names(keyword_mask, expected_keywords):
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Provider Name="Microsoft-Windows-Security-Auditing" />
+        <EventID>5379</EventID>
+        <Channel>Security</Channel>
+        <Keywords>{keyword_mask}</Keywords>
+        <Task>13824</Task>
+      </System>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["keywords"] == expected_keywords
+    assert result["task_category"] == "User Account Management"
+    if expected_keywords == "Audit Success":
+        assert "Keywords: Audit Success" in result["message"]
+        assert "Task Category: User Account Management" in result["message"]
+
+
+def test_summarize_security_event_does_not_display_unknown_task_id_as_category():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Provider Name="Microsoft-Windows-Security-Auditing" />
+        <Channel>Security</Channel>
+        <Task>99999</Task>
+      </System>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["task_category"] is None
+
+
+def test_summarize_event_xml_cleans_rendered_string_wrappers():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <EventID>1003</EventID>
+      </System>
+      <RenderingInfo>
+        <Message>&lt;string&gt;First status&lt;/string&gt;&lt;string&gt;Second status&lt;/string&gt;</Message>
+      </RenderingInfo>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["message"] == "First status\nSecond status"
 
 
 def test_parse_evtx_rejects_non_evtx_content(tmp_path):
@@ -120,6 +276,9 @@ def test_parse_evtx_accepts_newer_minor_version_without_strict_verification(tmp_
             "timestamp": "2026-11-22T12:00:00.000Z",
             "source": "Example-Provider",
             "severity": "Warning",
+            "channel": None,
+            "keywords": None,
+            "task_category": None,
             "message": "Example warning.",
         }
     ]
