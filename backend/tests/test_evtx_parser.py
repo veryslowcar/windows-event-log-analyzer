@@ -83,6 +83,54 @@ def test_summarize_event_xml_uses_rendered_level_when_present():
     assert result["severity"] == "Information"
 
 
+def test_summarize_security_spp_16384_formats_message_data():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Provider Name="Microsoft-Windows-Security-SPP" />
+        <EventID>16384</EventID>
+        <Channel>Application</Channel>
+        <Level>4</Level>
+      </System>
+      <EventData>
+        <Data>&lt;string&gt;2126-10-30T01:03:39Z&lt;/string&gt;
+        &lt;string&gt;RulesEngine&lt;/string&gt;</Data>
+        <Data />
+      </EventData>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["message"] == (
+        "Successfully scheduled Software Protection service for re-start at "
+        "2126-10-30T01:03:39Z. Reason: RulesEngine."
+    )
+
+
+def test_summarize_security_spp_1003_uses_readable_message():
+    event_xml = f"""\
+    <Event xmlns="{EVENT_NAMESPACE}">
+      <System>
+        <Provider Name="Microsoft-Windows-Security-SPP" />
+        <EventID>1003</EventID>
+        <Channel>Application</Channel>
+        <Level>4</Level>
+      </System>
+      <EventData>
+        <Data Name="ApplicationId">example</Data>
+        <Data Name="LicensingStatus">example</Data>
+      </EventData>
+    </Event>
+    """
+
+    result = summarize_event_xml(event_xml)
+
+    assert result["message"] == (
+        "The Software Protection service has completed licensing status check."
+    )
+
+
 @pytest.mark.parametrize(
     ("channel", "expected_severity"),
     [
