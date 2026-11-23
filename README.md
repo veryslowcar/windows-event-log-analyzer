@@ -1,6 +1,7 @@
 # Windows Event Log Analyzer
 
 A web application for uploading and analyzing Windows Event Log (`.evtx`) files. (Uploads are limited to 100 MB.)
+**BE PATIENT WITH UPLOADS!!!**
 
 ## Planned technology
 
