@@ -1,0 +1,48 @@
+substitutions:
+  _REGION: us-central1
+  _AR_REPOSITORY: windows-event-log-analyzer
+  _BACKEND_SERVICE: windows-event-log-api
+  _FRONTEND_SERVICE: windows-event-log-web
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/web:$COMMIT_SHA
+      - --file
+      - Dockerfile.cloudrun
+      - frontend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/web:$COMMIT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        backend_url="$$(gcloud run services describe "${_BACKEND_SERVICE}" \
+          --region="${_REGION}" \
+          --format='value(status.url)')"
+
+        gcloud run deploy "${_FRONTEND_SERVICE}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/web:$COMMIT_SHA" \
+          --region="${_REGION}" \
+          --platform=managed \
+          --port=8080 \
+          --allow-unauthenticated \
+          --memory=256Mi \
+          --max=3 \
+          --timeout=900 \
+          "--set-env-vars=API_PROXY_TARGET=$$backend_url"
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPOSITORY}/web:$COMMIT_SHA

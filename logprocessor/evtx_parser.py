@@ -10,6 +10,10 @@ from Evtx.Evtx import Evtx
 EVTX_MAGIC = b"ElfFile\x00"
 STRING_BOUNDARY_RE = re.compile(r"</\s*string\s*>\s*<\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
 STRING_TAG_RE = re.compile(r"</?\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
+STRING_VALUE_RE = re.compile(
+    r"<\s*string(?:\s+[^>]*)?\s*>(.*?)</\s*string\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
 SECURITY_AUDIT_SUCCESS = 0x0020000000000000
 SECURITY_AUDIT_FAILURE = 0x0010000000000000
 SECURITY_TASK_CATEGORIES = {
@@ -172,10 +176,47 @@ def _general_event_message(
     return "\n".join(lines)
 
 
-def _event_message(root: ET.Element) -> str | None:
+def _software_protection_message(root: ET.Element) -> str | None:
+    event_data = _find_child(root, "EventData")
+    values = []
+    if event_data is not None:
+        for data in event_data:
+            if data.tag.rsplit("}", 1)[-1] != "Data":
+                continue
+            raw_value = "".join(data.itertext()).strip()
+            string_values = [
+                value.strip()
+                for value in STRING_VALUE_RE.findall(raw_value)
+                if value.strip()
+            ]
+            values.extend(string_values or ([raw_value] if raw_value else []))
+
+    if len(values) < 2:
+        return None
+
+    return (
+        "Successfully scheduled Software Protection service for re-start at "
+        f"{values[0]}. Reason: {values[1]}."
+    )
+
+
+def _event_message(
+    root: ET.Element,
+    event_id: int | None,
+    provider_name: str | None,
+) -> str | None:
     rendering_info = _find_child(root, "RenderingInfo")
     rendered_message = _clean_message_value(_text(_find_child(rendering_info, "Message")))
-    return rendered_message
+    if rendered_message:
+        return rendered_message
+
+    if event_id == 16384 and provider_name == "Microsoft-Windows-Security-SPP":
+        return _software_protection_message(root)
+
+    if event_id == 1003 and provider_name == "Microsoft-Windows-Security-SPP":
+        return "The Software Protection service has completed licensing status check."
+
+    return None
 
 
 def summarize_event_xml(event_xml: str) -> EventSummary:
@@ -203,7 +244,7 @@ def summarize_event_xml(event_xml: str) -> EventSummary:
     severity = _event_severity(system, rendering_info, channel)
     keywords = _event_keywords(system, rendering_info, channel)
     task_category = _event_task_category(system, rendering_info, provider_name, channel)
-    message = _event_message(root) or _general_event_message(
+    message = _event_message(root, event_id, provider_name) or _general_event_message(
         event_id,
         timestamp,
         provider_name,
