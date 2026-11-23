@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const EVENTS_PER_PAGE = 100;
+const LONG_MESSAGE_THRESHOLD = 240;
 
 function App() {
   const fileInput = useRef(null);
@@ -56,6 +57,18 @@ function App() {
   const visibleEvents = summary
     ? summary.events.slice(pageStart, pageStart + EVENTS_PER_PAGE)
     : [];
+  const eventLogType = useMemo(() => {
+    if (!summary) {
+      return null;
+    }
+
+    const channels = [...new Set(
+      summary.events.map((event) => event.channel?.toLowerCase()).filter(Boolean),
+    )];
+    return channels.length === 1 ? channels[0] : null;
+  }, [summary]);
+  const isKnownEventLog = ["application", "security", "setup", "system"].includes(eventLogType);
+  const isSecurityLog = eventLogType === "security";
 
   function chooseFile(event) {
     setFile(event.target.files?.[0] ?? null);
@@ -335,62 +348,117 @@ function App() {
               </div>
 
               {summary.events.length > 0 ? (
-                <div className="event-table-scroll">
-                  <h3 className="event-table-heading">Event details</h3>
-                  <table className="event-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Event ID</th>
-                        <th scope="col">Timestamp</th>
-                        <th scope="col">Source</th>
-                        <th scope="col">Severity</th>
-                        <th scope="col">Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleEvents.map((event, index) => (
-                        <tr key={`${event.timestamp ?? "unknown"}-${event.event_id ?? "unknown"}-${pageStart + index}`}>
-                          <td>{event.event_id ?? "—"}</td>
-                          <td>{event.timestamp ?? "—"}</td>
-                          <td>{event.source ?? "—"}</td>
-                          <td>
-                            <span className={`severity-badge ${event.severity.toLowerCase()}`}>
-                              {event.severity}
-                            </span>
-                          </td>
-                          <td className="message-cell">{event.message ?? "No message available"}</td>
+                <>
+                  <h3 className="event-table-heading" id="event-table-heading">Event details</h3>
+                  <div
+                    className="event-table-scroll"
+                    role="region"
+                    aria-labelledby="event-table-heading"
+                    tabIndex={0}
+                  >
+                    <table className={`event-table ${isKnownEventLog ? "event-viewer-table" : ""}`}>
+                      <thead>
+                        <tr>
+                          {isKnownEventLog ? (
+                            <th scope="col">{isSecurityLog ? "Keywords" : "Level"}</th>
+                          ) : (
+                            <th scope="col">Event ID</th>
+                          )}
+                          <th scope="col">Date and Time</th>
+                          <th scope="col">Source</th>
+                          {isKnownEventLog ? (
+                            <>
+                              <th scope="col">Event ID</th>
+                              <th scope="col">Task Category</th>
+                            </>
+                          ) : (
+                            <th scope="col">Severity</th>
+                          )}
+                          <th scope="col">Message</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="event-pagination">
-                    <span>
-                      Showing {pageStart + 1}–{Math.min(pageStart + EVENTS_PER_PAGE, summary.events.length)} of{" "}
-                      {summary.events.length} events
-                    </span>
-                    {pageCount > 1 && (
-                      <div className="pagination-controls">
-                        <button
-                          type="button"
-                          onClick={() => setEventPage((page) => page - 1)}
-                          disabled={eventPage === 0}
-                        >
-                          Previous
-                        </button>
-                        <span>
-                          Page {eventPage + 1} of {pageCount}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setEventPage((page) => page + 1)}
-                          disabled={eventPage === pageCount - 1}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    )}
+                      </thead>
+                      <tbody>
+                        {visibleEvents.map((event, index) => {
+                          const messageContent = isKnownEventLog ? (
+                            event.message ? (
+                              <details className="message-details">
+                                <summary>
+                                  {event.message.length > LONG_MESSAGE_THRESHOLD ? "View full message" : "View message"}
+                                </summary>
+                                <pre>{event.message}</pre>
+                              </details>
+                            ) : (
+                              "No message available"
+                            )
+                          ) : event.message && event.message.length > LONG_MESSAGE_THRESHOLD ? (
+                            <details className="message-details">
+                              <summary>View full message</summary>
+                              <pre>{event.message}</pre>
+                            </details>
+                          ) : (
+                            event.message ?? "No message available"
+                          );
+
+                          return (
+                            <tr key={`${event.timestamp ?? "unknown"}-${event.event_id ?? "unknown"}-${pageStart + index}`}>
+                              <td>
+                                {isKnownEventLog ? (
+                                  isSecurityLog ? event.keywords || "—" : (
+                                    <span className={`severity-badge ${event.severity.toLowerCase()}`}>
+                                      {event.severity}
+                                    </span>
+                                  )
+                                ) : (
+                                  event.event_id ?? "—"
+                                )}
+                              </td>
+                              <td>{event.timestamp ?? "—"}</td>
+                              <td>{event.source ?? "—"}</td>
+                              <td>
+                                {isKnownEventLog ? (
+                                  event.event_id ?? "—"
+                                ) : (
+                                  <span className={`severity-badge ${event.severity.toLowerCase()}`}>
+                                    {event.severity}
+                                  </span>
+                                )}
+                              </td>
+                              {isKnownEventLog && <td>{event.task_category || "—"}</td>}
+                              <td className="message-cell">{messageContent}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <div className="event-pagination">
+                      <span>
+                        Showing {pageStart + 1}–{Math.min(pageStart + EVENTS_PER_PAGE, summary.events.length)} of{" "}
+                        {summary.events.length} events
+                      </span>
+                      {pageCount > 1 && (
+                        <div className="pagination-controls">
+                          <button
+                            type="button"
+                            onClick={() => setEventPage((page) => page - 1)}
+                            disabled={eventPage === 0}
+                          >
+                            Previous
+                          </button>
+                          <span>
+                            Page {eventPage + 1} of {pageCount}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEventPage((page) => page + 1)}
+                            disabled={eventPage === pageCount - 1}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </>
               ) : (
                 <p className="empty-events">No events were found in this log.</p>
               )}

@@ -1,3 +1,4 @@
+import re
 import struct
 import xml.etree.ElementTree as ET
 from typing import TypedDict
@@ -7,6 +8,13 @@ from Evtx.Evtx import Evtx
 
 
 EVTX_MAGIC = b"ElfFile\x00"
+STRING_BOUNDARY_RE = re.compile(r"</\s*string\s*>\s*<\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
+STRING_TAG_RE = re.compile(r"</?\s*string(?:\s+[^>]*)?\s*>", re.IGNORECASE)
+SECURITY_AUDIT_SUCCESS = 0x0020000000000000
+SECURITY_AUDIT_FAILURE = 0x0010000000000000
+SECURITY_TASK_CATEGORIES = {
+    "13824": "User Account Management",
+}
 SEVERITY_LEVELS = {
     "0": "LogAlways",
     "1": "Critical",
@@ -22,6 +30,9 @@ class EventSummary(TypedDict):
     timestamp: str | None
     source: str | None
     severity: str
+    channel: str | None
+    keywords: str | None
+    task_category: str | None
     message: str | None
 
 
@@ -47,28 +58,124 @@ def _text(element: ET.Element | None) -> str | None:
     return value or None
 
 
+def _clean_message_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    value = STRING_BOUNDARY_RE.sub("\n", value)
+    value = STRING_TAG_RE.sub("", value).strip()
+    return value or None
+
+
+def _event_keywords(system: ET.Element, rendering_info: ET.Element | None, channel: str | None) -> str | None:
+    rendered_keywords = _find_child(rendering_info, "Keywords")
+    keyword_labels: list[str] = []
+    if rendered_keywords is not None:
+        for keyword in rendered_keywords:
+            if keyword.tag.rsplit("}", 1)[-1] == "Keyword":
+                value = _text(keyword)
+                if value:
+                    keyword_labels.append(value)
+
+    system_keywords = _text(_find_child(system, "Keywords"))
+    if channel is not None and channel.casefold() == "security":
+        if system_keywords:
+            try:
+                keyword_mask = int(system_keywords, 0)
+            except ValueError:
+                keyword_mask = 0
+
+            audit_keywords = []
+            if keyword_mask & SECURITY_AUDIT_SUCCESS:
+                audit_keywords.append("Audit Success")
+            if keyword_mask & SECURITY_AUDIT_FAILURE:
+                audit_keywords.append("Audit Failure")
+            if audit_keywords:
+                return ", ".join(audit_keywords)
+
+        security_labels = [label for label in keyword_labels if label.casefold() != "classic"]
+        if security_labels:
+            return ", ".join(security_labels)
+
+    return (
+        ", ".join(keyword_labels)
+        or _text(rendered_keywords)
+        or system_keywords
+    )
+
+
+def _event_task_category(
+    system: ET.Element,
+    rendering_info: ET.Element | None,
+    provider_name: str | None,
+    channel: str | None,
+) -> str | None:
+    rendered_task = _text(_find_child(rendering_info, "Task"))
+    if rendered_task and not rendered_task.isdecimal():
+        return rendered_task
+
+    if (
+        provider_name == "Microsoft-Windows-Security-Auditing"
+        and channel is not None
+        and channel.casefold() == "security"
+    ):
+        task_id = rendered_task or _text(_find_child(system, "Task"))
+        return SECURITY_TASK_CATEGORIES.get(task_id or "")
+
+    return None
+
+
+def _event_severity(
+    system: ET.Element,
+    rendering_info: ET.Element | None,
+    channel: str | None,
+) -> str:
+    rendered_level = _text(_find_child(rendering_info, "Level"))
+    if rendered_level and not rendered_level.isdecimal():
+        return rendered_level
+
+    level = rendered_level or _text(_find_child(system, "Level"))
+    if (
+        level == "0"
+        and channel is not None
+        and channel.casefold() in {"application", "setup", "system"}
+    ):
+        return "Information"
+
+    return SEVERITY_LEVELS.get(level or "", "Unknown")
+
+
+def _general_event_message(
+    event_id: int | None,
+    timestamp: str | None,
+    source: str | None,
+    severity: str,
+    channel: str | None,
+    keywords: str | None,
+    task_category: str | None,
+) -> str:
+    fields = [
+        ("Channel", channel),
+        ("Event ID", str(event_id) if event_id is not None else None),
+        ("Date and Time", timestamp),
+        ("Source", source),
+        (
+            "Keywords" if channel and channel.casefold() == "security" else "Level",
+            keywords if channel and channel.casefold() == "security" else (
+                severity if severity != "Unknown" else None
+            ),
+        ),
+        ("Task Category", task_category),
+    ]
+    lines = ["Rendered message unavailable. General event information:"]
+    lines.extend(f"{label}: {value}" for label, value in fields if value)
+    return "\n".join(lines)
+
+
 def _event_message(root: ET.Element) -> str | None:
     rendering_info = _find_child(root, "RenderingInfo")
-    rendered_message = _text(_find_child(rendering_info, "Message"))
-    if rendered_message:
-        return rendered_message
-
-    event_data = _find_child(root, "EventData")
-    values = []
-    if event_data is not None:
-        for data in event_data:
-            if data.tag.rsplit("}", 1)[-1] != "Data":
-                continue
-            value = _text(data)
-            if value:
-                name = data.attrib.get("Name")
-                values.append(f"{name}: {value}" if name else value)
-
-    if values:
-        return "; ".join(values)
-
-    user_data = _find_child(root, "UserData")
-    return _text(user_data)
+    rendered_message = _clean_message_value(_text(_find_child(rendering_info, "Message")))
+    return rendered_message
 
 
 def summarize_event_xml(event_xml: str) -> EventSummary:
@@ -88,15 +195,33 @@ def summarize_event_xml(event_xml: str) -> EventSummary:
         event_id = None
 
     provider = _find_child(system, "Provider")
+    provider_name = provider.attrib.get("Name") if provider is not None else None
     time_created = _find_child(system, "TimeCreated")
-    level = _text(_find_child(system, "Level"))
+    rendering_info = _find_child(root, "RenderingInfo")
+    channel = _text(_find_child(system, "Channel"))
+    timestamp = time_created.attrib.get("SystemTime") if time_created is not None else None
+    severity = _event_severity(system, rendering_info, channel)
+    keywords = _event_keywords(system, rendering_info, channel)
+    task_category = _event_task_category(system, rendering_info, provider_name, channel)
+    message = _event_message(root) or _general_event_message(
+        event_id,
+        timestamp,
+        provider_name,
+        severity,
+        channel,
+        keywords,
+        task_category,
+    )
 
     return {
         "event_id": event_id,
-        "timestamp": time_created.attrib.get("SystemTime") if time_created is not None else None,
-        "source": provider.attrib.get("Name") if provider is not None else None,
-        "severity": SEVERITY_LEVELS.get(level, "Unknown"),
-        "message": _event_message(root),
+        "timestamp": timestamp,
+        "source": provider_name,
+        "severity": severity,
+        "channel": channel,
+        "keywords": keywords,
+        "task_category": task_category,
+        "message": message,
     }
 
 
