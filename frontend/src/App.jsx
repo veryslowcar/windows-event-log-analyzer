@@ -37,7 +37,7 @@ function App() {
 
   const dashboardStats = useMemo(() => {
     if (!summary) {
-      return { errorCount: 0, warningCount: 0 };
+      return { errorCount: 0, warningCount: 0, informationalCount: 0 };
     }
 
     return summary.events.reduce(
@@ -46,12 +46,42 @@ function App() {
           counts.errorCount += 1;
         } else if (event.severity === "Warning") {
           counts.warningCount += 1;
+        } else if (event.severity === "Information") {
+          counts.informationalCount += 1;
         }
         return counts;
       },
-      { errorCount: 0, warningCount: 0 },
+      { errorCount: 0, warningCount: 0, informationalCount: 0 },
     );
   }, [summary]);
+  const totalEvents = summary?.events.length ?? 0;
+  const otherEventCount = Math.max(
+    0,
+    totalEvents
+      - dashboardStats.errorCount
+      - dashboardStats.warningCount
+      - dashboardStats.informationalCount,
+  );
+  const donutBackground = useMemo(() => {
+    if (totalEvents === 0) {
+      return "conic-gradient(#e8ebf2 0% 100%)";
+    }
+
+    const segments = [
+      { count: dashboardStats.errorCount, color: "#a43838" },
+      { count: dashboardStats.warningCount, color: "#8a5a10" },
+      { count: dashboardStats.informationalCount, color: "#276047" },
+      { count: otherEventCount, color: "#4268d8" },
+    ];
+    let position = 0;
+    const gradientStops = segments.map(({ count, color }) => {
+      const start = position;
+      position += (count / totalEvents) * 100;
+      return `${color} ${start}% ${position}%`;
+    });
+
+    return `conic-gradient(${gradientStops.join(", ")})`;
+  }, [dashboardStats, otherEventCount, totalEvents]);
   const pageCount = summary ? Math.ceil(summary.events.length / EVENTS_PER_PAGE) : 0;
   const pageStart = eventPage * EVENTS_PER_PAGE;
   const visibleEvents = summary
@@ -332,18 +362,39 @@ function App() {
                 </div>
               </div>
 
-              <div className="dashboard-stats" aria-label="Event totals">
-                <div className="dashboard-stat">
-                  <span>Total events</span>
-                  <strong>{summary.event_count}</strong>
+              <div className="dashboard-overview" role="group" aria-label="Event totals and severity distribution">
+                <div
+                  className="dashboard-donut"
+                  role="img"
+                  aria-label={`Event distribution: ${dashboardStats.errorCount} errors, ${dashboardStats.warningCount} warnings, ${dashboardStats.informationalCount} informational, ${otherEventCount} other`}
+                  style={{ background: donutBackground }}
+                >
+                  <div className="dashboard-donut-center">
+                    <span>Total events</span>
+                    <strong>{totalEvents}</strong>
+                  </div>
                 </div>
-                <div className="dashboard-stat">
-                  <span>Errors</span>
-                  <strong>{dashboardStats.errorCount}</strong>
-                </div>
-                <div className="dashboard-stat">
-                  <span>Warnings</span>
-                  <strong>{dashboardStats.warningCount}</strong>
+                <div className="dashboard-stat-list">
+                  <div className="dashboard-stat-row error-stat">
+                    <span className="dashboard-stat-swatch" aria-hidden="true" />
+                    <span>Errors</span>
+                    <strong>{dashboardStats.errorCount}</strong>
+                  </div>
+                  <div className="dashboard-stat-row warning-stat">
+                    <span className="dashboard-stat-swatch" aria-hidden="true" />
+                    <span>Warnings</span>
+                    <strong>{dashboardStats.warningCount}</strong>
+                  </div>
+                  <div className="dashboard-stat-row information-stat">
+                    <span className="dashboard-stat-swatch" aria-hidden="true" />
+                    <span>Informational</span>
+                    <strong>{dashboardStats.informationalCount}</strong>
+                  </div>
+                  <div className="dashboard-stat-row other-stat">
+                    <span className="dashboard-stat-swatch" aria-hidden="true" />
+                    <span>Other events</span>
+                    <strong>{otherEventCount}</strong>
+                  </div>
                 </div>
               </div>
 
